@@ -1,0 +1,10 @@
+gdal
+rasterio
+scikit-learn
+numpy
+tensorboard
+torchvision
+scikit-image
+pandas
+tqdm
+torch
