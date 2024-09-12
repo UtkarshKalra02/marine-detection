@@ -1,10 +1,3 @@
-'''
-Author: Azhan Mohammed
-Email: azhanmohammed1999@gmail.com
-Python: 3.7.10
-Description: Trains the model, currently can train normal Unet model or Attention based UNet model
-'''
-
 import os
 import ast
 import sys
@@ -90,17 +83,23 @@ g = torch.Generator()
 g.manual_seed(0)
 agg_to_water = True
 
-transformTrain = transforms.Compose([transforms.ToTensor(),
-                                    RandomRotationTransform([-90, 0, 90, 180]),
-                                    transforms.RandomHorizontalFlip()])
+transformTrain = transforms.Compose([
+    transforms.Resize((256, 256)),  # Resize images to a fixed size
+    transforms.ToTensor(),
+    RandomRotationTransform([-90, 0, 90, 180]),
+    transforms.RandomHorizontalFlip()
+])
 
-transformTest = transforms.Compose([transforms.ToTensor()])
+transformTest = transforms.Compose([
+    transforms.Resize((256, 256)),  # Resize images to a fixed size
+    transforms.ToTensor()
+])
 
 standardization = transforms.Normalize(bands_mean, bands_std)
 
-datasetTrain = GenDEBRIS('train', transform=transformTrain, standardization = standardization, agg_to_water = agg_to_water)
-datasetTest = GenDEBRIS('val', transform=transformTest, standardization = standardization, agg_to_water = agg_to_water)
-        
+datasetTrain = GenDEBRIS('train', root_dir="dataimg", transform=transformTrain, standardization=standardization, agg_to_water=agg_to_water)
+datasetTest = GenDEBRIS('val', root_dir="dataimg", transform=transformTest, standardization=standardization, agg_to_water=agg_to_water)
+
 trainLoader = DataLoader(datasetTrain, 
                         batch_size = batchSizeTrain, 
                         shuffle = True,
@@ -122,11 +121,11 @@ else:
         device = torch.device("cpu")
 
 if modelName == "resattunet":
-    model = ResidualAttentionUNet(11, 11)
+    model = ResidualAttentionUNet(3, 11)  # Change input channels to 3
 elif modelName == "attunet":
-    model = AttentionUNet(11, 11)
+    model = AttentionUNet(3, 11)  # Change input channels to 3
 elif modelName == "unet":
-    model = UNet(11, 11)
+    model = UNet(3, 11)  # Change input channels to 3
 else:
     print("Enter correct choice of architecture")
     exit()

@@ -1,15 +1,3 @@
-'''
-UNet Original Paper: Ronneberger et al., 2015 (https://arxiv.org/abs/1505.04597)
-UNet Initial PyTorch Implementation: Alexandre Milesi (https://github.com/milesial/Pytorch-UNet)
-
-CBAM Original Paper:
-CBAM Initial PyTorch Implementation:
-
-This modified implementation of UNet + CBAM: Azhan Mohammed
-Email: azhanmohammed1999@gmail.com
-Description: UNet model with Residual Blocks having Channel and Spatial Attention for pixel-level segmentation
-'''
-
 import torch
 import numpy as np
 from torch import nn
@@ -29,10 +17,11 @@ class ChannelAttention(nn.Module):
         super(ChannelAttention, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.max_pool = nn.AdaptiveMaxPool2d(1)
-           
-        self.fc = nn.Sequential(nn.Conv2d(in_planes, in_planes // 16, 1, bias=False),
-                               nn.ReLU(),
-                               nn.Conv2d(in_planes // 16, in_planes, 1, bias=False))
+        self.fc = nn.Sequential(
+            nn.Conv2d(in_planes, in_planes // ratio, 1, bias=False),
+            nn.ReLU(),
+            nn.Conv2d(in_planes // ratio, in_planes, 1, bias=False)
+        )
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
@@ -44,8 +33,7 @@ class ChannelAttention(nn.Module):
 class SpatialAttention(nn.Module):
     def __init__(self, kernel_size=7):
         super(SpatialAttention, self).__init__()
-
-        self.conv1 = nn.Conv2d(2, 1, kernel_size, padding=kernel_size//2, bias=False)
+        self.conv1 = nn.Conv2d(2, 1, kernel_size, padding=kernel_size // 2, bias=False)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
@@ -66,7 +54,7 @@ class ResidualBlock(nn.Module):
         self.downsample = downsample
         self.ca = ChannelAttention(outputChannel)
         self.sa = SpatialAttention()
-        
+
     def forward(self, x):
         residual = x
         out = self.conv1(x)
@@ -96,8 +84,8 @@ class BasicDownSample(nn.Module):
             nn.LeakyReLU(0.2),
             nn.AvgPool2d(2)
         )
-    
-    def forward(self,x):
+
+    def forward(self, x):
         x = self.convolution(x)
         return x
 
@@ -115,8 +103,8 @@ class DownSampleWithAttention(nn.Module):
         )
         self.ca = ChannelAttention(outputChannel)
         self.sa = SpatialAttention()
-    
-    def forward(self,x):
+
+    def forward(self, x):
         x = self.convolution(x)
         caOutput = self.ca(x)
         x = caOutput * x
@@ -136,12 +124,12 @@ class BasicUpSample(nn.Module):
             nn.LeakyReLU(0.2)
         )
         self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-    
+
     def forward(self, x):
         x = self.upsample(x)
         x = self.convolution(x)
         return x
-    
+
 class UpSampleWithAttention(nn.Module):
     def __init__(self, inputChannel, outputChannel):
         super().__init__()
@@ -156,7 +144,7 @@ class UpSampleWithAttention(nn.Module):
         self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
         self.ca = ChannelAttention(outputChannel)
         self.sa = SpatialAttention()
-    
+
     def forward(self, x):
         x = self.upsample(x)
         x = self.convolution(x)
@@ -167,116 +155,116 @@ class UpSampleWithAttention(nn.Module):
         return x, saOutput
 
 class UNet(nn.Module):
-  def __init__(self, inputChannel, outputChannel):
-    super().__init__()
-    self.downsample1 = BasicDownSample(inputChannel, 32)
-    self.downsample2 = BasicDownSample(32, 64)
-    self.downsample3 = BasicDownSample(64, 128)
-    self.downsample4 = BasicDownSample(128, 256)
-    self.downsample5 = BasicDownSample(256, 512)
+    def __init__(self, inputChannel, outputChannel):
+        super().__init__()
+        self.downsample1 = BasicDownSample(inputChannel, 32)
+        self.downsample2 = BasicDownSample(32, 64)
+        self.downsample3 = BasicDownSample(64, 128)
+        self.downsample4 = BasicDownSample(128, 256)
+        self.downsample5 = BasicDownSample(256, 512)
 
-    self.upsample1 = BasicUpSample(512, 256)
-    self.upsample2 = BasicUpSample(512, 128)
-    self.upsample3 = BasicUpSample(256, 64)
-    self.upsample4 = BasicUpSample(128, 32)
-    self.upsample5 = BasicUpSample(64, 32)
-    self.classification = self.classification = nn.Sequential(
+        self.upsample1 = BasicUpSample(512, 256)
+        self.upsample2 = BasicUpSample(512, 128)
+        self.upsample3 = BasicUpSample(256, 64)
+        self.upsample4 = BasicUpSample(128, 32)
+        self.upsample5 = BasicUpSample(64, 32)
+        self.classification = nn.Sequential(
             nn.Conv2d(32, outputChannel, kernel_size=1),
         )
 
-  def forward(self, x):
-    scale128 = self.downsample1(x)
-    scale64 = self.downsample2(scale128)
-    scale32 = self.downsample3(scale64)
-    scale16 = self.downsample4(scale32)
-    scale8 = self.downsample5(scale16)
-    upscale16 = self.upsample1(scale8)
-    upscale16 = torch.cat([upscale16, scale16], dim=1)
-    upscale32 = self.upsample2(upscale16)
-    upscale32 = torch.cat([upscale32, scale32], dim=1)
-    upscale64 = self.upsample3(upscale32)
-    upscale64 = torch.cat([upscale64, scale64], dim=1)
-    upscale128 = self.upsample4(upscale64)
-    upscale128 = torch.cat([upscale128, scale128], dim=1)
-    upscale256 = self.upsample5(upscale128)
-    finaloutput = self.classification(upscale256)
-    return finaloutput
+    def forward(self, x):
+        scale128 = self.downsample1(x)
+        scale64 = self.downsample2(scale128)
+        scale32 = self.downsample3(scale64)
+        scale16 = self.downsample4(scale32)
+        scale8 = self.downsample5(scale16)
+        upscale16 = self.upsample1(scale8)
+        upscale16 = torch.cat([upscale16, scale16], dim=1)
+        upscale32 = self.upsample2(upscale16)
+        upscale32 = torch.cat([upscale32, scale32], dim=1)
+        upscale64 = self.upsample3(upscale32)
+        upscale64 = torch.cat([upscale64, scale64], dim=1)
+        upscale128 = self.upsample4(upscale64)
+        upscale128 = torch.cat([upscale128, scale128], dim=1)
+        upscale256 = self.upsample5(upscale128)
+        finaloutput = self.classification(upscale256)
+        return finaloutput
 
 class AttentionUNet(nn.Module):
-  def __init__(self, inputChannel, outputChannel):
-    super().__init__()
-    self.downsample1 = DownSampleWithAttention(inputChannel, 32)
-    self.downsample2 = DownSampleWithAttention(32, 64)
-    self.downsample3 = DownSampleWithAttention(64, 128)
-    self.downsample4 = DownSampleWithAttention(128, 256)
-    self.downsample5 = DownSampleWithAttention(256, 512)
+    def __init__(self, inputChannel, outputChannel):
+        super().__init__()
+        self.downsample1 = DownSampleWithAttention(inputChannel, 32)
+        self.downsample2 = DownSampleWithAttention(32, 64)
+        self.downsample3 = DownSampleWithAttention(64, 128)
+        self.downsample4 = DownSampleWithAttention(128, 256)
+        self.downsample5 = DownSampleWithAttention(256, 512)
 
-    self.upsample1 = UpSampleWithAttention(512, 256)
-    self.upsample2 = UpSampleWithAttention(512, 128)
-    self.upsample3 = UpSampleWithAttention(256, 64)
-    self.upsample4 = UpSampleWithAttention(128, 32)
-    self.upsample5 = UpSampleWithAttention(64, 32)
-    self.classification = nn.Sequential(
+        self.upsample1 = UpSampleWithAttention(512, 256)
+        self.upsample2 = UpSampleWithAttention(512, 128)
+        self.upsample3 = UpSampleWithAttention(256, 64)
+        self.upsample4 = UpSampleWithAttention(128, 32)
+        self.upsample5 = UpSampleWithAttention(64, 32)
+        self.classification = nn.Sequential(
             nn.Conv2d(32, outputChannel, kernel_size=1),
         )
 
-  def forward(self, x):
-    scale128, sa128down = self.downsample1(x)
-    scale64, sa64down = self.downsample2(scale128)
-    scale32, sa32down = self.downsample3(scale64)
-    scale16, sa64down = self.downsample4(scale32)
-    scale8, sa8down = self.downsample5(scale16)
-    upscale16, sa16up = self.upsample1(scale8)
-    upscale16 = torch.cat([upscale16, scale16], dim=1)
-    upscale32, sa32up = self.upsample2(upscale16)
-    upscale32 = torch.cat([upscale32, scale32], dim=1)
-    upscale64, sa64up = self.upsample3(upscale32)
-    upscale64 = torch.cat([upscale64, scale64], dim=1)
-    upscale128, sa128up = self.upsample4(upscale64)
-    upscale128 = torch.cat([upscale128, scale128], dim=1)
-    upscale256, sa256up = self.upsample5(upscale128)
-    finaloutput = self.classification(upscale256)
-    return finaloutput
+    def forward(self, x):
+        scale128, sa128down = self.downsample1(x)
+        scale64, sa64down = self.downsample2(scale128)
+        scale32, sa32down = self.downsample3(scale64)
+        scale16, sa64down = self.downsample4(scale32)
+        scale8, sa8down = self.downsample5(scale16)
+        upscale16, sa16up = self.upsample1(scale8)
+        upscale16 = torch.cat([upscale16, scale16], dim=1)
+        upscale32, sa32up = self.upsample2(upscale16)
+        upscale32 = torch.cat([upscale32, scale32], dim=1)
+        upscale64, sa64up = self.upsample3(upscale32)
+        upscale64 = torch.cat([upscale64, scale64], dim=1)
+        upscale128, sa128up = self.upsample4(upscale64)
+        upscale128 = torch.cat([upscale128, scale128], dim=1)
+        upscale256, sa256up = self.upsample5(upscale128)
+        finaloutput = self.classification(upscale256)
+        return finaloutput
 
 class ResidualAttentionUNet(nn.Module):
-  def __init__(self, inputChannel, outputChannel):
-    super().__init__()
-    self.downsample1 = DownSampleWithAttention(inputChannel, 32)
-    self.downsample2 = DownSampleWithAttention(32, 64)
-    self.downsample3 = DownSampleWithAttention(64, 128)
-    self.downsample4 = DownSampleWithAttention(128, 256)
-    self.downsample5 = DownSampleWithAttention(256, 512)
+    def __init__(self, inputChannel, outputChannel):
+        super().__init__()
+        self.downsample1 = DownSampleWithAttention(inputChannel, 32)
+        self.downsample2 = DownSampleWithAttention(32, 64)
+        self.downsample3 = DownSampleWithAttention(64, 128)
+        self.downsample4 = DownSampleWithAttention(128, 256)
+        self.downsample5 = DownSampleWithAttention(256, 512)
 
-    self.residualBlock1 = ResidualBlock(512, 512)
-    self.residualBlock2 = ResidualBlock(512, 512)
-    self.residualBlock3 = ResidualBlock(512, 512)
+        self.residualBlock1 = ResidualBlock(512, 512)
+        self.residualBlock2 = ResidualBlock(512, 512)
+        self.residualBlock3 = ResidualBlock(512, 512)
 
-    self.upsample1 = UpSampleWithAttention(512, 256)
-    self.upsample2 = UpSampleWithAttention(512, 128)
-    self.upsample3 = UpSampleWithAttention(256, 64)
-    self.upsample4 = UpSampleWithAttention(128, 32)
-    self.upsample5 = UpSampleWithAttention(64, 32)
-    self.classification = nn.Sequential(
+        self.upsample1 = UpSampleWithAttention(512, 256)
+        self.upsample2 = UpSampleWithAttention(512, 128)
+        self.upsample3 = UpSampleWithAttention(256, 64)
+        self.upsample4 = UpSampleWithAttention(128, 32)
+        self.upsample5 = UpSampleWithAttention(64, 32)
+        self.classification = nn.Sequential(
             nn.Conv2d(32, outputChannel, kernel_size=1),
         )
 
-  def forward(self, x):
-    scale128, sa128down = self.downsample1(x)
-    scale64, sa64down = self.downsample2(scale128)
-    scale32, sa32down = self.downsample3(scale64)
-    scale16, sa64down = self.downsample4(scale32)
-    scale8, sa8down = self.downsample5(scale16)
-    scale8, sa8down = self.residualBlock1(scale8)
-    scale8, sa8down = self.residualBlock2(scale8)
-    scale8, sa8down = self.residualBlock3(scale8)
-    upscale16, sa16up = self.upsample1(scale8)
-    upscale16 = torch.cat([upscale16, scale16], dim=1)
-    upscale32, sa32up = self.upsample2(upscale16)
-    upscale32 = torch.cat([upscale32, scale32], dim=1)
-    upscale64, sa64up = self.upsample3(upscale32)
-    upscale64 = torch.cat([upscale64, scale64], dim=1)
-    upscale128, sa128up = self.upsample4(upscale64)
-    upscale128 = torch.cat([upscale128, scale128], dim=1)
-    upscale256, sa256up = self.upsample5(upscale128)
-    finaloutput = self.classification(upscale256)
-    return finaloutput
+    def forward(self, x):
+        scale128, sa128down = self.downsample1(x)
+        scale64, sa64down = self.downsample2(scale128)
+        scale32, sa32down = self.downsample3(scale64)
+        scale16, sa64down = self.downsample4(scale32)
+        scale8, sa8down = self.downsample5(scale16)
+        scale8, sa8down = self.residualBlock1(scale8)
+        scale8, sa8down = self.residualBlock2(scale8)
+        scale8, sa8down = self.residualBlock3(scale8)
+        upscale16, sa16up = self.upsample1(scale8)
+        upscale16 = torch.cat([upscale16, scale16], dim=1)
+        upscale32, sa32up = self.upsample2(upscale16)
+        upscale32 = torch.cat([upscale32, scale32], dim=1)
+        upscale64, sa64up = self.upsample3(upscale32)
+        upscale64 = torch.cat([upscale64, scale64], dim=1)
+        upscale128, sa128up = self.upsample4(upscale64)
+        upscale128 = torch.cat([upscale128, scale128], dim=1)
+        upscale256, sa256up = self.upsample5(upscale128)
+        finaloutput = self.classification(upscale256)
+        return finaloutput
